@@ -32,4 +32,3 @@ This project visualizes COVID-19 cases and obesity rates across US states using 
 
 - `covid_confirmed_usafacts.csv`: Contains COVID-19 case data.
 - `obesity-2022.csv`: Contains obesity rate data for the year 2022.
-- `2023-Obesity-by-demographic.csv`: Contains obesity rate data by demographic for the year 2023.
