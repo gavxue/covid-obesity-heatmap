@@ -3,18 +3,19 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import json
+from state_populations import state_populations
 
-def load_and_process_data(start_date=None, end_date=None):
+def load_and_process_data():
     """
     Load and process COVID and obesity datasets with date range selection
     Args:
-        start_date (str): Start date in 'YYYY-MM-DD' format
-        end_date (str): End date in 'YYYY-MM-DD' format
+        date (str): date in 'YYYY-MM-DD' format
     """
+    date = st.session_state.date
     try:
         # Load COVID data
         covid_df = pd.read_csv('covid_confirmed_usafacts.csv')
-        
+
         # Get all date columns (excluding metadata columns)
         date_columns = covid_df.columns[4:]  # Skip countyFIPS, County Name, State, StateFIPS
         available_dates = list(date_columns)
@@ -22,30 +23,36 @@ def load_and_process_data(start_date=None, end_date=None):
         # Print available date range
         print(f"\nAvailable date range: {available_dates[0]} to {available_dates[-1]}")
         
-        # Validate and set dates
-        if start_date is None or start_date not in available_dates:
-            start_date = available_dates[0]
-            print(f"Using default start date: {start_date}")
+        # # Validate and set dates
+        # if start_date is None or start_date not in available_dates:
+        #     start_date = available_dates[0]
+        #     print(f"Using default start date: {start_date}")
             
-        if end_date is None or end_date not in available_dates:
-            end_date = available_dates[-1]
-            print(f"Using default end date: {end_date}")
+        if date is None or date not in available_dates:
+            date = available_dates[-1]
+            print(f"Using default end date: {date}")
             
         # Ensure start date comes before end date
-        if available_dates.index(start_date) > available_dates.index(end_date):
-            raise ValueError("Start date must be before end date")
+        # if available_dates.index(start_date) > available_dates.index(date):
+        #     raise ValueError("Start date must be before end date")
             
-        print(f"Analyzing COVID data from {start_date} to {end_date}")
+        print(f"Analyzing COVID data to {date}")
         
         # Calculate state totals for selected date range
         covid_state_totals = covid_df.groupby('State').agg({
-            start_date: 'sum',
-            end_date: 'sum'
+            # start_date: 'sum',
+            date: 'sum'
         }).reset_index()
         
         # Rename columns and calculate growth
-        covid_state_totals.columns = ['State', 'InitialCases', 'FinalCases']
-        covid_state_totals['CaseGrowth'] = covid_state_totals['FinalCases'] - covid_state_totals['InitialCases']
+        covid_state_totals.columns = ['State', 'Cases']
+        covid_state_totals['CasesPerCapita'] = covid_state_totals['Cases']
+
+        for index, row in covid_state_totals.iterrows():
+            state = row['State']
+            covid_state_totals.at[index, 'CasesPerCapita'] = row['Cases'] / state_populations[state] * 100
+
+        # covid_state_totals['CaseGrowth'] = covid_state_totals['FinalCases'] - covid_state_totals['InitialCases']
         
         # Add case rate per 100k calculation
         # state_populations = covid_df.groupby('State')[start_date].count()  # Using county count as a proxy for population
@@ -54,13 +61,14 @@ def load_and_process_data(start_date=None, end_date=None):
         
         # Print summary statistics
         print("\nCOVID Data Summary:")
-        print(f"Total cases at start: {covid_state_totals['InitialCases'].sum():,}")
-        print(f"Total cases at end: {covid_state_totals['FinalCases'].sum():,}")
-        print(f"Total growth: {covid_state_totals['CaseGrowth'].sum():,}")
+        # print(f"Total cases at start: {covid_state_totals['InitialCases'].sum():,}")
+        print(f"Total cases: {covid_state_totals['Cases'].sum():,}")
+        # print(f"Total growth: {covid_state_totals['CaseGrowth'].sum():,}")
         
         # Load and process obesity data
         obesity_df = pd.read_csv('obesity-2022.csv')
-        obesity_df.rename(columns={"Prevalence": "ObesityRate"}, inplace='true')
+        obesity_df.rename(columns={"Prevalence": "ObesityRate"}, inplace=True)
+        obesity_df.drop(columns=['95% CI'], inplace=True)
         
         # Define region mapping
         # region_mapping = {
@@ -94,8 +102,8 @@ def load_and_process_data(start_date=None, end_date=None):
         merged_data = covid_state_totals.merge(obesity_df, on='State', how='outer')
         
         # Normalize the data
-        merged_data['CovidGrowthNormalized'] = merged_data['CaseGrowth'] / merged_data['CaseGrowth'].max()
-        merged_data['ObesityNormalized'] = merged_data['ObesityRate'] / 100
+        # merged_data['CovidGrowthNormalized'] = merged_data['CaseGrowth'] / merged_data['CaseGrowth'].max()
+        # merged_data['ObesityNormalized'] = merged_data['ObesityRate'] / 100
         
         print("\nMerged Data Sample:")
         print(merged_data.head())
@@ -111,6 +119,7 @@ def create_obesity_choropleth():
     """
     Create a choropleth map showing only obesity rates
     """
+    date = st.session_state.date
     # Load the processed data
     state_data = load_and_process_data()
     
@@ -130,8 +139,8 @@ def create_obesity_choropleth():
             x=1.0,
             xanchor='left'
         ),
-        zmin=20,
-        zmax=40
+        zmin=0,
+        zmax=50
     )
     
     # Update layout
@@ -158,6 +167,7 @@ def create_covid_choropleth():
     """
     Create a choropleth map showing only COVID-19 cases
     """
+    date = st.session_state.date
     # Load the processed data
     state_data = load_and_process_data()
     
@@ -167,18 +177,18 @@ def create_covid_choropleth():
     # Add choropleth layer for COVID cases
     fig.add_choropleth(
         locations=state_data['State'],
-        z=state_data['FinalCases'],
+        z=state_data['CasesPerCapita'],
         locationmode='USA-states',
         colorscale='Reds',
         showscale=True,
-        name='COVID-19 Cases',
+        name='COVID-19 Cases Per Capita',
         colorbar=dict(
-            title="COVID-19 Cases<br>(Normalized)",
+            title="COVID-19 Cases<br>(Per Capita)",
             x=1.0,
             xanchor='left'
         ),
         zmin=0,
-        zmax=11300486
+        zmax=50
     )
     
     # Update layout
@@ -205,6 +215,7 @@ def create_dual_choropleth():
     """
     Create a dual-layer choropleth map using Plotly
     """
+    date = st.session_state.date
     # Load the processed data
     state_data = load_and_process_data()
     
@@ -214,24 +225,24 @@ def create_dual_choropleth():
     # Add first choropleth layer for COVID cases
     fig.add_choropleth(
         locations=state_data['State'],
-        z=state_data['CovidGrowthNormalized'],
+        z=state_data['CasesPerCapita'],
         locationmode='USA-states',
         colorscale='Reds',
         showscale=True,
-        name='COVID-19 Cases',
+        name='COVID-19 Cases Per Capita',
         colorbar=dict(
-            title="COVID-19 Cases<br>(Normalized)",
+            title="COVID-19 Cases<br>(Per Capita)",
             x=1.0,
             xanchor='left'
         ),
         zmin=0,
-        zmax=1
+        zmax=50
     )
     
     # Add second choropleth layer for obesity
     fig.add_choropleth(
         locations=state_data['State'],
-        z=state_data['ObesityNormalized'],
+        z=state_data['ObesityRate'],
         locationmode='USA-states',
         colorscale='Blues',
         showscale=True,
@@ -242,7 +253,7 @@ def create_dual_choropleth():
             xanchor='left'
         ),
         zmin=0,
-        zmax=1,
+        zmax=50,
         marker=dict(opacity=0.6)
     )
     
@@ -275,6 +286,11 @@ def main():
     """)
     
     try:
+        date = st.date_input('Enter date:', min_value='2020-01-22', max_value='2023-07-23')
+
+        if 'date' not in st.session_state:
+            st.session_state.date = date
+
         # Create tabs for different visualizations
         tab1, tab2, tab3 = st.tabs(["COVID-19 Map", "Obesity Map", "Combined Map"])
         
